@@ -216,23 +216,39 @@ def search_articles(query, page=1, results_per_page=100, timeframe=None, max_fut
     # Process PubMed results
     for paper in pubmed_papers['PubmedArticle']:
         try:
-            # Extract date
-            if 'PubmedData' in paper and 'History' in paper['PubmedData']:
-                dates = paper['PubmedData']['History']
-                online_date = None
-                for date in dates:
-                    if isinstance(date, dict) and 'PubStatus' in date and date['PubStatus'] == 'pubmed':
-                        online_date = datetime(int(date['Year']), int(date['Month']), int(date['Day']))
-                        break
-                if not online_date:
-                    online_date = max(datetime(int(date['Year']), int(date['Month']), int(date['Day'])) for date in dates if isinstance(date, dict))
-            else:
+            # Extract date - Updated logic
+            article_date = None
+            
+            # First try to get the electronic publication date
+            if 'ArticleDate' in paper['MedlineCitation']['Article']:
+                article_dates = paper['MedlineCitation']['Article']['ArticleDate']
+                if article_dates:
+                    date_dict = article_dates[0]
+                    article_date = datetime(int(date_dict['Year']), 
+                                         int(date_dict['Month']), 
+                                         int(date_dict['Day']))
+            
+            # If no electronic date, try publication date
+            if not article_date and 'PubDate' in paper['MedlineCitation']['Article']['Journal']:
+                pub_date = paper['MedlineCitation']['Article']['Journal']['PubDate']
+                if all(key in pub_date for key in ['Year', 'Month', 'Day']):
+                    article_date = datetime(int(pub_date['Year']),
+                                         int(pub_date['Month']),
+                                         int(pub_date['Day']))
+                elif all(key in pub_date for key in ['Year', 'Month']):
+                    article_date = datetime(int(pub_date['Year']),
+                                         int(pub_date['Month']),
+                                         1)
+                elif 'Year' in pub_date:
+                    article_date = datetime(int(pub_date['Year']), 1, 1)
+            
+            if not article_date:
                 continue
 
-            if not is_valid_date(online_date):
+            if not is_valid_date(article_date):
                 continue
 
-            color = get_pubmed_color(online_date)
+            color = get_pubmed_color(article_date)
 
             # Extract other information
             article = paper.get('MedlineCitation', {}).get('Article', {})
@@ -249,10 +265,10 @@ def search_articles(query, page=1, results_per_page=100, timeframe=None, max_fut
             doi = next((id_obj for id_obj in article_id_list if id_obj.attributes.get('IdType') == 'doi'), None)
             doi_link = f'<a href="https://doi.org/{doi}" target="_blank">{doi}</a>' if doi else 'Not available'
 
-            date_str = online_date.strftime("%Y-%m-%d")
+            date_str = article_date.strftime("%Y-%m-%d")
 
             all_articles.append({
-                'date': online_date,
+                'date': article_date,
                 'color': color,
                 'html': f"""
                 <div style="margin-bottom: 20px; padding: 10px; background-color: {color};">
